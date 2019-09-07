@@ -1358,6 +1358,8 @@ int main(int argc, char **argv)
 			skip=2;
 		} else if (strcmp(argv[1], "spiflash-info") == 0) {
 			aw_fel_spiflash_info(handle);
+		} else if (strcmp(argv[1], "spiflash-erase") == 0) {
+			aw_fel_spiflash_erasechip(handle);
 		} else if (strcmp(argv[1], "spiflash-read") == 0 && argc > 4) {
 			size_t size = strtoul(argv[3], NULL, 0);
 			void *buf = malloc(size);

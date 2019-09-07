@@ -280,6 +280,74 @@ static void prepare_spi_batch_data_transfer(feldev_handle *dev, uint32_t buf)
 	}
 }
 
+#define CMD_WRITE_ENABLE 0x06
+#define CMD_READ_ST0     0x05
+#define SPI_FLASH_16MB_BOUN  0x1000000
+# define CMD_BANKADDR_BRWR              0x17	//only SPANSION flash use it
+# define CMD_BANKADDR_BRRD              0x16
+# define CMD_EXTNADDR_WREAR             0xC5
+# define CMD_EXTNADDR_RDEAR             0xC8
+# define CMD_ERASE_CHIP                  0xC7 // 0x60
+
+
+static void exit_4btyes(feldev_handle *dev)
+{
+	uint8_t cmdbuf[100];
+	int cmd_idx=0;
+
+	prepare_spi_batch_data_transfer(dev, dev->soc_info->spl_addr);
+	/* Emit write enable command */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 1;
+	cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
+	/* Emit write bank */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 2;
+	cmdbuf[cmd_idx++] = CMD_EXTNADDR_WREAR;
+	cmdbuf[cmd_idx++] = 0;
+	/* Emit wait for completion */
+	cmdbuf[cmd_idx++] = 0xFF;
+	cmdbuf[cmd_idx++] = 0xFF;
+	/* Emit the end marker */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 0;
+	aw_fel_write(dev, cmdbuf, dev->soc_info->spl_addr, cmd_idx);
+	aw_fel_remotefunc_execute(dev, NULL);
+}
+
+static size_t bank_curr = 0;
+static void set_4bytesmode(feldev_handle *dev, size_t offset)
+{
+	uint8_t cmdbuf[100];
+	size_t bank_sel;
+	int cmd_idx=0;
+
+	prepare_spi_batch_data_transfer(dev, dev->soc_info->spl_addr);
+	//add bank support
+	bank_sel = offset /SPI_FLASH_16MB_BOUN;
+	if (bank_sel == bank_curr)
+		goto bar_end;
+
+	/* Emit write enable command */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 1;
+	cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
+	/* Emit write bank */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 2;
+	cmdbuf[cmd_idx++] = CMD_EXTNADDR_WREAR;
+	cmdbuf[cmd_idx++] = offset >> 24;
+	/* Emit wait for completion */
+	cmdbuf[cmd_idx++] = 0xFF;
+	cmdbuf[cmd_idx++] = 0xFF;
+	/* Emit the end marker */
+	cmdbuf[cmd_idx++] = 0;
+	cmdbuf[cmd_idx++] = 0;
+	aw_fel_write(dev, cmdbuf, dev->soc_info->spl_addr, cmd_idx);
+	aw_fel_remotefunc_execute(dev, NULL);
+bar_end:
+	bank_curr = bank_sel;
+}
 /*
  * Read data from the SPI flash. Use the first 4KiB of SRAM as the data buffer.
  */
@@ -298,6 +366,7 @@ void aw_fel_spiflash_read(feldev_handle *dev,
 	aw_fel_write(dev, cmdbuf, soc_info->spl_addr, max_chunk_size);
 
 	spi0_init(dev);
+	set_4bytesmode(dev, offset);
 	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
 
 	progress_start(progress, len);
@@ -327,6 +396,8 @@ void aw_fel_spiflash_read(feldev_handle *dev,
 		progress_update(chunk_size);
 	}
 
+	//set_4bytesmode(dev, 0);
+	exit_4btyes(dev);
 	free(cmdbuf);
 	restore_sram(dev, backup);
 }
@@ -334,9 +405,6 @@ void aw_fel_spiflash_read(feldev_handle *dev,
 /*
  * Write data to the SPI flash. Use the first 4KiB of SRAM as the data buffer.
  */
-
-#define CMD_WRITE_ENABLE 0x06
-
 void aw_fel_spiflash_write_helper(feldev_handle *dev,
 				  uint32_t offset, void *buf, size_t len,
 				  size_t erase_size, uint8_t erase_cmd,
@@ -352,6 +420,7 @@ void aw_fel_spiflash_write_helper(feldev_handle *dev,
 	uint8_t *cmdbuf = malloc(max_chunk_size);
 	cmd_idx = 0;
 
+	set_4bytesmode(dev, offset);
 	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
 
 	while (len > 0) {
@@ -453,6 +522,8 @@ void aw_fel_spiflash_write(feldev_handle *dev,
 		buf8   += write_count;
 		progress_update(write_count);
 	}
+	//set_4bytesmode(dev, 0);
+	exit_4btyes(dev);
 
 	restore_sram(dev, backup);
 }
@@ -497,6 +568,24 @@ void aw_fel_spiflash_info(feldev_handle *dev)
 	       manufacturer, buf[3], buf[4], (1 << buf[5]));
 }
 
+void aw_fel_spiflash_erasechip(feldev_handle *dev)
+{
+	soc_info_t *soc_info = dev->soc_info;
+	unsigned char write_en_buf[] = { 0, 1, CMD_WRITE_ENABLE };
+	unsigned char buf[] = { 0, 1, CMD_ERASE_CHIP, 0xFF, 0xFF, 0x0, 0x0 };
+	void *backup = backup_sram(dev);
+
+	spi0_init(dev);
+	prepare_spi_batch_data_transfer(dev, soc_info->spl_addr);
+	aw_fel_write(dev, write_en_buf, soc_info->spl_addr, sizeof(write_en_buf));
+	aw_fel_write(dev, buf, soc_info->spl_addr+3, sizeof(buf));
+	aw_fel_remotefunc_execute(dev, NULL);
+
+	restore_sram(dev, backup);
+
+	printf("erase ok!\n");
+}
+
 /*
  * Show a help message about the available "spiflash-*" commands.
  */
@@ -504,5 +593,6 @@ void aw_fel_spiflash_help(void)
 {
 	printf("	spiflash-info			Retrieves basic information\n"
 	       "	spiflash-read addr length file	Write SPI flash contents into file\n"
-	       "	spiflash-write addr file	Store file contents into SPI flash\n");
+	       "	spiflash-write addr file	Store file contents into SPI flash\n"
+		   "    spiflash-erase erase chip\n");
 }
