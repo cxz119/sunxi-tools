@@ -290,30 +290,30 @@ static void prepare_spi_batch_data_transfer(feldev_handle *dev, uint32_t buf)
 # define CMD_ERASE_CHIP                  0xC7 // 0x60
 
 
-static void exit_4btyes(feldev_handle *dev)
-{
-	uint8_t cmdbuf[100];
-	int cmd_idx=0;
-
-	prepare_spi_batch_data_transfer(dev, dev->soc_info->spl_addr);
-	/* Emit write enable command */
-	cmdbuf[cmd_idx++] = 0;
-	cmdbuf[cmd_idx++] = 1;
-	cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
-	/* Emit write bank */
-	cmdbuf[cmd_idx++] = 0;
-	cmdbuf[cmd_idx++] = 2;
-	cmdbuf[cmd_idx++] = CMD_EXTNADDR_WREAR;
-	cmdbuf[cmd_idx++] = 0;
-	/* Emit wait for completion */
-	cmdbuf[cmd_idx++] = 0xFF;
-	cmdbuf[cmd_idx++] = 0xFF;
-	/* Emit the end marker */
-	cmdbuf[cmd_idx++] = 0;
-	cmdbuf[cmd_idx++] = 0;
-	aw_fel_write(dev, cmdbuf, dev->soc_info->spl_addr, cmd_idx);
-	aw_fel_remotefunc_execute(dev, NULL);
-}
+//static void exit_4btyes(feldev_handle *dev)
+//{
+//	uint8_t cmdbuf[100];
+//	int cmd_idx=0;
+//
+//	prepare_spi_batch_data_transfer(dev, dev->soc_info->spl_addr);
+//	/* Emit write enable command */
+//	cmdbuf[cmd_idx++] = 0;
+//	cmdbuf[cmd_idx++] = 1;
+//	cmdbuf[cmd_idx++] = CMD_WRITE_ENABLE;
+//	/* Emit write bank */
+//	cmdbuf[cmd_idx++] = 0;
+//	cmdbuf[cmd_idx++] = 2;
+//	cmdbuf[cmd_idx++] = CMD_EXTNADDR_WREAR;
+//	cmdbuf[cmd_idx++] = 0;
+//	/* Emit wait for completion */
+//	cmdbuf[cmd_idx++] = 0xFF;
+//	cmdbuf[cmd_idx++] = 0xFF;
+//	/* Emit the end marker */
+//	cmdbuf[cmd_idx++] = 0;
+//	cmdbuf[cmd_idx++] = 0;
+//	aw_fel_write(dev, cmdbuf, dev->soc_info->spl_addr, cmd_idx);
+//	aw_fel_remotefunc_execute(dev, NULL);
+//}
 
 static size_t bank_curr = 0;
 static void set_4bytesmode(feldev_handle *dev, size_t offset)
@@ -396,8 +396,8 @@ void aw_fel_spiflash_read(feldev_handle *dev,
 		progress_update(chunk_size);
 	}
 
-	//set_4bytesmode(dev, 0);
-	exit_4btyes(dev);
+	set_4bytesmode(dev, 0);
+	//exit_4btyes(dev);
 	free(cmdbuf);
 	restore_sram(dev, backup);
 }
@@ -473,6 +473,7 @@ void aw_fel_spiflash_write_helper(feldev_handle *dev,
 		aw_fel_remotefunc_execute(dev, NULL);
 		cmd_idx = 0;
 	}
+	set_4bytesmode(dev, 0);
 
 	free(cmdbuf);
 }
@@ -522,8 +523,6 @@ void aw_fel_spiflash_write(feldev_handle *dev,
 		buf8   += write_count;
 		progress_update(write_count);
 	}
-	//set_4bytesmode(dev, 0);
-	exit_4btyes(dev);
 
 	restore_sram(dev, backup);
 }
